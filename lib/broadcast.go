@@ -1,97 +1,132 @@
 package lib
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"log"
-	"math/rand"
 	"net"
+	"net/http"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/gin-gonic/gin"
 )
 
-var (
-	ClientID   string
-	ClientPort int
-	Clients    = make(map[string]string) // id -> ip:port
-)
+type Client struct {
+	ID     string
+	IP     string
+	Port   int
+	Status string
+	Peers  map[string]*Client
+	server *gin.Engine
+}
 
-func GetLocalIP() string {
-	addrs, err := net.InterfaceAddrs()
-	if err != nil {
-		log.Fatal(err)
+func NewClient(ip string, port int) *Client {
+	return &Client{
+		ID:     fmt.Sprintf("%s:%d", ip, port),
+		IP:     ip,
+		Port:   port,
+		Status: "",
+		Peers:  make(map[string]*Client),
+		server: gin.Default(),
 	}
-	for _, address := range addrs {
-		if ipnet, ok := address.(*net.IPNet); ok && !ipnet.IP.IsLoopback() {
-			if ipnet.IP.To4() != nil {
-				return ipnet.IP.String()
+}
+
+func (c *Client) StartDiscover() {
+	// broadcast self's address every 2 seconds
+	go func() {
+		conn, err := net.Dial("udp", "255.255.255.255:9876")
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer conn.Close()
+
+		for {
+			if _, err := fmt.Fprintln(conn, c.ID); err != nil {
+				log.Println("Error broadcasting:", err)
+			}
+			time.Sleep(2 * time.Second)
+		}
+	}()
+
+	// listen to clients and add them to pool
+	go func() {
+		addr, err := net.ResolveUDPAddr("udp", ":9876")
+		if err != nil {
+			log.Fatal(err)
+		}
+		conn, err := net.ListenUDP("udp", addr)
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer conn.Close()
+		buf := make([]byte, 1024)
+		for {
+			n, _, err := conn.ReadFromUDP(buf)
+			if err != nil {
+				log.Println("Error receiving:", err)
+				continue
+			}
+			id := string(buf[:n])
+			parts := strings.Split(id, ":")
+			if len(parts) != 2 {
+				continue
+			}
+			ip := parts[0]
+			port, err := strconv.Atoi(parts[1])
+			if err != nil {
+				continue
+			}
+			// in case of mark self as new client
+			if id == c.ID {
+				continue
+			}
+			c.Peers[id] = &Client{
+				ID:   id,
+				IP:   ip,
+				Port: port,
 			}
 		}
-	}
-	return ""
+	}()
 }
 
-func RandPort() int {
-	return 10000 + rand.Intn(10000)
+func (c *Client) Listen(path string, handler func(ctx *gin.Context, src *Client)) {
+	c.server.POST(path, func(ctx *gin.Context) {
+		handler(ctx, c)
+	})
 }
 
-func StartBroadcast() {
-	conn, err := net.Dial("udp", "255.255.255.255:9876")
+// send message to client, path should start with '/'
+func (c *Client) Send(path string, content gin.H) (gin.H, error) {
+	jsonData, err := json.Marshal(content)
 	if err != nil {
-		log.Fatal(err)
+		return nil, fmt.Errorf("failed to marshal JSON: %v", err)
 	}
-	defer conn.Close()
-
-	for {
-		message := fmt.Sprintf("%s:%d", ClientID, ClientPort)
-		_, err = fmt.Fprintln(conn, message)
-		if err != nil {
-			log.Println("Error broadcasting:", err)
-		}
-		time.Sleep(2 * time.Second)
-	}
-}
-
-func StartListening() {
-	addr, err := net.ResolveUDPAddr("udp", ":9876")
+	url := fmt.Sprintf("http://%s%s", c.ID, path)
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
-		log.Fatal(err)
+		return nil, fmt.Errorf("failed to create HTTP request: %v", err)
 	}
+	req.Header.Set("Content-Type", "application/json")
 
-	conn, err := net.ListenUDP("udp", addr)
+	client := &http.Client{}
+	resp, err := client.Do(req)
 	if err != nil {
-		log.Fatal(err)
+		return nil, fmt.Errorf("failed to send HTTP request: %v", err)
 	}
-	defer conn.Close()
+	defer resp.Body.Close()
 
-	buf := make([]byte, 1024)
-
-	for {
-		n, _, err := conn.ReadFromUDP(buf)
-		if err != nil {
-			log.Println("Error receiving:", err)
-			continue
-		}
-
-		message := string(buf[:n])
-		handleBroadcast(message)
-	}
-}
-
-func handleBroadcast(message string) {
-	parts := strings.Split(message, ":")
-	if len(parts) != 2 {
-		return
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("received non-OK response status: %s", resp.Status)
 	}
 
-	id := parts[0]
-	port, err := strconv.Atoi(parts[1])
-	if err != nil {
-		return
+	// 解析响应体为 gin.H
+	var responseBody gin.H
+	if err := json.NewDecoder(resp.Body).Decode(&responseBody); err != nil {
+		return nil, fmt.Errorf("failed to decode response body: %v", err)
 	}
 
-	if id != ClientID {
-		Clients[id] = fmt.Sprintf("%s:%d", id, port)
-		fmt.Printf("Discovered client: %s at %s\n", id, Clients[id])
-	}
+	return responseBody, nil
 }

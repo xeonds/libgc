@@ -25,11 +25,11 @@ func AddCRUD[T any](router gin.IRouter, path string, db *gorm.DB) *gin.RouterGro
 		return group
 	})(router, path)
 }
-func AddCRUDNew[T any](router gin.IRouter, path string, db *gorm.DB, processGet func(*gorm.DB, *gin.Context) *gorm.DB, processGetAll func(*gorm.DB, *gin.Context) *gorm.DB, processCreate func(*gorm.DB, *gin.Context) *gorm.DB) *gin.RouterGroup {
+func AddCRUDNew[T any](router gin.IRouter, path string, db *gorm.DB, processGet func(*gorm.DB, *gin.Context) *gorm.DB, processGetAll func(*gorm.DB, *gin.Context) *gorm.DB, processCreate func(*gorm.DB, *T) *gorm.DB) *gin.RouterGroup {
 	return APIBuilder(func(group *gin.RouterGroup) *gin.RouterGroup {
-		group.GET("", GetAll[T](db, nil))
-		group.GET("/:id", Get[T](db, nil))
-		group.POST("", Create[T](db, nil))
+		group.GET("", GetAll[T](db, processGetAll))
+		group.GET("/:id", Get[T](db, processGet))
+		group.POST("", Create[T](db, processCreate))
 		group.PUT("/:id", Update[T](db))
 		group.DELETE("/:id", Delete[T](db))
 		return group
@@ -141,39 +141,12 @@ func Update[T any](db *gorm.DB) func(c *gin.Context) {
 }
 func Delete[T any](db *gorm.DB) func(c *gin.Context) {
 	return func(c *gin.Context) {
-		id := c.Param("id")
-		var d T
-		if err := db.Where("id = ?", id).Delete(&d).Error; err != nil {
+		id, d := c.Param("id"), new(T)
+		if err := db.Where("id = ?", id).Delete(d).Error; err != nil {
 			c.AbortWithStatus(404)
 			log.Println(err)
 		} else {
 			c.JSON(200, d)
-		}
-	}
-}
-func HandleFind[T any](queryProcess func(c *gin.Context) *gorm.DB) func(c *gin.Context) {
-	return func(c *gin.Context) {
-		query := new(T)
-		err := queryProcess(c).First(query).Error
-		if err != nil {
-			c.JSON(http.StatusNotFound, gin.H{
-				"message": "Query Content Not Found",
-			})
-		} else {
-			c.JSON(200, query)
-		}
-	}
-}
-func HandleFindAll[T any](queryProcess func(c *gin.Context) *gorm.DB) func(c *gin.Context) {
-	return func(c *gin.Context) {
-		var query []T
-		err := queryProcess(c).Find(&query).Error
-		if err != nil {
-			c.JSON(http.StatusNotFound, gin.H{
-				"message": "Query Content Not Found",
-			})
-		} else {
-			c.JSON(200, query)
 		}
 	}
 }
