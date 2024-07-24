@@ -21,7 +21,7 @@ import (
 )
 
 // 为Gin router 添加CRUD
-func APIBuilder(router gin.IRouter, handlers ...func(*gin.RouterGroup) *gin.RouterGroup) func(gin.IRouter, string) *gin.RouterGroup {
+func APIBuilder(handlers ...func(*gin.RouterGroup) *gin.RouterGroup) func(gin.IRouter, string) *gin.RouterGroup {
 	return func(router gin.IRouter, path string) *gin.RouterGroup {
 		group := router.Group(path)
 		for _, handler := range handlers {
