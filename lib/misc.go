@@ -2,7 +2,9 @@ package lib
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/csv"
+	"encoding/hex"
 	"errors"
 	"log"
 	"math/rand"
@@ -179,4 +181,12 @@ func LoadCSV(filePath string) (map[string]map[string]string, error) {
 		data[id] = values
 	}
 	return data, nil
+}
+
+func GenerateShortLink(url string) string {
+	h := sha256.New()
+	h.Write([]byte(url))
+	hash := h.Sum(nil)
+	shortLink := hex.EncodeToString(hash)[:24] // 取前8个字符作为短链接
+	return shortLink
 }
