@@ -1,8 +1,10 @@
-package lib
+package libgc
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/csv"
+	"encoding/hex"
 	"errors"
 	"log"
 	"math/rand"
@@ -182,21 +184,10 @@ func LoadCSV(filePath string) (map[string]map[string]string, error) {
 	return data, nil
 }
 
-func RandPort() int {
-	return 10000 + rand.Intn(10000)
-}
-
-func GetLocalIP() string {
-	addrs, err := net.InterfaceAddrs()
-	if err != nil {
-		log.Fatal(err)
-	}
-	for _, address := range addrs {
-		if ipnet, ok := address.(*net.IPNet); ok && !ipnet.IP.IsLoopback() {
-			if ipnet.IP.To4() != nil {
-				return ipnet.IP.String()
-			}
-		}
-	}
-	return ""
+func GenerateShortLink(url string) string {
+	h := sha256.New()
+	h.Write([]byte(url))
+	hash := h.Sum(nil)
+	shortLink := hex.EncodeToString(hash)[:24] // 取前8个字符作为短链接
+	return shortLink
 }

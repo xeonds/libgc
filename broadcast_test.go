@@ -1,4 +1,4 @@
-package lib_test
+package libgc_test
 
 import (
 	"fmt"

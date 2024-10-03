@@ -1,4 +1,4 @@
-module libgc
+module github.com/xeonds/libgc
 
 go 1.22.4
 
