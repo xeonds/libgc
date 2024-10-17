@@ -1,6 +1,8 @@
 package libgc
 
-import "time"
+import (
+	"time"
+)
 
 type UserClaim struct {
 	ID         int       `json:"id"`

@@ -2,24 +2,24 @@ package libgc_test
 
 import (
 	"fmt"
-	"libgc/lib"
 	"testing"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/xeonds/libgc"
 )
 
 func TestBroadcast(t *testing.T) {
-	IP := lib.GetLocalIP()
-	Port1, Port2 := lib.RandPort(), lib.RandPort()
+	IP := libgc.GetLocalIP()
+	Port1, Port2 := libgc.RandPort(), libgc.RandPort()
 	fmt.Printf("Client IP: %s\n", IP)
 	fmt.Printf("Client Port: %d, %d\n", Port1, Port2)
 
-	c1, c2 := lib.NewClient(IP, Port1), lib.NewClient(IP, Port2)
-	c1.Listen("/ping", func(ctx *gin.Context, src *lib.Client) {
+	c1, c2 := libgc.NewClient(IP, Port1), libgc.NewClient(IP, Port2)
+	c1.Listen("/ping", func(ctx *gin.Context, src *libgc.Client) {
 		ctx.JSON(200, gin.H{"port": src.ID})
 	})
-	c2.Listen("/ping", func(ctx *gin.Context, src *lib.Client) {
+	c2.Listen("/ping", func(ctx *gin.Context, src *libgc.Client) {
 		ctx.JSON(200, gin.H{"port": src.ID})
 	})
 	go c1.StartDiscover()

@@ -155,7 +155,7 @@ func Delete[T any](db *gorm.DB) func(c *gin.Context) {
 func HandleMailSendCaptcha(mailConfig MailConfig, captchaConfig CaptchaConfig, rdb *redis.Client) func(*gin.Context) {
 	return func(c *gin.Context) {
 		mailTo := c.Query("mail") // TODO: 增加对mail的合法性验证
-		codeId, code := GenerateCaptcha(captchaConfig.CaptchaLength)
+		codeId, code := GenerateCaptcha(captchaConfig.CaptchaLength, "")
 		rdb.Set(context.Background(), codeId, code, time.Minute*time.Duration(captchaConfig.CaptchaAlive))
 		e := email.NewEmail()
 		e.From = "Get <" + mailConfig.MailServer + ">"
@@ -173,15 +173,13 @@ func HandleMailSendCaptcha(mailConfig MailConfig, captchaConfig CaptchaConfig, r
 }
 func HandleCaptchaVerify(rdb *redis.Client) func(*gin.Context) {
 	return func(c *gin.Context) {
-		// TODO: 增加对id和code的合法性验证
-		codeId := c.Query("id")
-		code := c.Query("code")
-		if VerifyCaptcha(codeId, code, rdb) {
+		// 有可能会被恶意利用，所以需要对id和code进行合法性验证
+		if VerifyCaptcha(c.Query("id"), c.Query("code"), rdb) {
 			c.JSON(200, gin.H{
 				"message": "验证码正确",
 			})
 		} else {
-			c.JSON(200, gin.H{
+			c.JSON(400, gin.H{
 				"message": "验证码错误",
 			})
 		}
@@ -253,9 +251,13 @@ func HandleRegister(db *gorm.DB) func(*gin.Context) {
 func RefreshToken(db *gorm.DB) func(*gin.Context) {
 	return func(c *gin.Context) {
 		token := c.GetHeader("Authorization") // Authed by JWTMiddleware, so the token is valid
-		claim, _ := ParseToken(token)
+		claim, err := ParseToken(token)
+		if err != nil {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Failed to parse token"})
+			return
+		}
 		claim.Expire = time.Now().Add(time.Hour * 24)
-		token, err := GenerateToken(claim)
+		token, err = GenerateToken(claim)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate token"})
 			return

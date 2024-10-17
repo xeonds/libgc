@@ -1,7 +1,6 @@
 package libgc
 
 import (
-	"log"
 	"net/http"
 	"time"
 
@@ -9,12 +8,12 @@ import (
 )
 
 // Gin中间件
-func Logger() gin.HandlerFunc {
+func LoggerMiddleware(logFile string) gin.HandlerFunc {
+	logger := NewLoger(logFile)
 	return func(c *gin.Context) {
-		t := time.Now()
+		start := time.Now()
 		c.Next()
-		latency := time.Since(t)
-		log.Print(latency)
+		logger.Printf("%s %s %s %s %s\n", c.ClientIP(), c.Request.Method, c.Request.URL.Path, time.Since(start), c.GetHeader("Authorization"))
 	}
 }
 

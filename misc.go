@@ -17,6 +17,7 @@ import (
 	"github.com/go-redis/redis/v8"
 	"github.com/gofrs/uuid"
 	"github.com/golang-jwt/jwt"
+	"github.com/grandcat/zeroconf"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/driver/mysql"
 	"gorm.io/driver/sqlite"
@@ -94,13 +95,15 @@ func GenerateUUID() string {
 
 // 生成验证码
 // 返回验证码id，验证码
-func GenerateCaptcha(length int) (string, string) {
-	var chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
+func GenerateCaptcha(length int, charset string) (string, string) {
+	if charset == "" {
+		charset = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
+	}
 	return GenerateUUID(), func() string {
 		rand.NewSource(time.Now().UnixNano())
 		result := make([]byte, length)
 		for i := range result {
-			result[i] = chars[rand.Intn(len(chars))]
+			result[i] = charset[rand.Intn(len(charset))]
 		}
 		return string(result)
 	}()
@@ -120,15 +123,29 @@ func NewRedis(config *RedisConfig) *redis.Client {
 	})
 }
 
-func NewDB(config *DatabaseConfig, migrator func(*gorm.DB) error) *gorm.DB {
+/*
+	 连接数据库
+	 config: 数据库配置
+	 migrator: 数据库迁移函数, 为nil则不迁移
+	 gormConfig: gorm配置
+	 迁移函数示例:
+
+		func Migrate(db *gorm.DB) error {
+			return db.AutoMigrate(&User{})
+		}
+*/
+func NewDB(config *DatabaseConfig, migrator func(*gorm.DB) error, gormConfig *gorm.Config) *gorm.DB {
 	var db *gorm.DB
 	var err error
+	if gormConfig == nil {
+		gormConfig = &gorm.Config{}
+	}
 	switch config.Type {
 	case "mysql":
 		dsn := config.User + ":" + config.Password + "@tcp(" + config.Host + ":" + config.Port + ")/" + config.DB + "?charset=utf8mb4&parseTime=True&loc=Local"
-		db, err = gorm.Open(mysql.Open(dsn), &gorm.Config{})
+		db, err = gorm.Open(mysql.Open(dsn), gormConfig)
 	case "sqlite":
-		db, err = gorm.Open(sqlite.Open(config.DB), &gorm.Config{})
+		db, err = gorm.Open(sqlite.Open(config.DB), gormConfig)
 	}
 	if err != nil {
 		log.Fatalf("Failed to connect to database: %v", err)
@@ -190,4 +207,46 @@ func GenerateShortLink(url string) string {
 	hash := h.Sum(nil)
 	shortLink := hex.EncodeToString(hash)[:24] // 取前8个字符作为短链接
 	return shortLink
+}
+
+// new logger, default to append mode
+func NewLoger(logFile string) *log.Logger {
+	file, err := os.OpenFile(logFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0666)
+	if err != nil {
+		log.Fatal(err)
+	}
+	return log.New(file, "", log.LstdFlags)
+}
+
+func GetLocalIP() string {
+	addrs, err := net.InterfaceAddrs()
+	if err != nil {
+		log.Println("Failed to get local IP address: ", err)
+		return ""
+	}
+
+	for _, addr := range addrs {
+		if ipNet, ok := addr.(*net.IPNet); ok && !ipNet.IP.IsLoopback() {
+			if ipNet.IP.To4() != nil {
+				return ipNet.IP.String()
+			}
+		}
+	}
+	return ""
+}
+
+func RandPort() int {
+	rand.New(rand.NewSource(time.Now().UnixNano()))
+	return rand.Intn(65535-1024) + 1024
+}
+
+// mDNS广播
+func RunmDnsBroadcast(serviceName, serviceDomain, instanceName string, text []string, servicePort int) {
+	server, err := zeroconf.Register(instanceName, serviceName, serviceDomain, servicePort, text, nil)
+	if err != nil {
+		log.Fatalf("Failed to register mDNS service: %v", err)
+	}
+	defer server.Shutdown()
+	log.Printf("mDNS service %s.%s:%d published", instanceName, serviceName, servicePort)
+	select {}
 }
