@@ -31,3 +31,24 @@ func LoadConfig[Config any]() *Config {
 	}
 	return config
 }
+
+// TODO: SaveConfig[Config any]
+func SaveConfig[Config any](config *Config) {
+	if _, err := os.Stat("config.yaml"); err != nil {
+		confTmpl := new(Config)
+		data, _ := yaml.Marshal(confTmpl)
+		os.WriteFile("config.yaml", []byte(data), 0644)
+		log.Fatal(errors.New("config file not found, a template file has been created"))
+	}
+	if err:= func() error {
+		data, err := yaml.Marshal(config)
+		if err != nil {
+			return err
+		}
+		os.WriteFile("config.yaml", []byte(data), 0644)
+		log.Println("config file saved to config.yaml")
+	}(); err!=nil {
+		log.Fatal(errors.New("config file save failed"))
+	}
+	return nil
+}
