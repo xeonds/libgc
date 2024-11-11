@@ -40,15 +40,15 @@ func SaveConfig[Config any](config *Config) {
 		os.WriteFile("config.yaml", []byte(data), 0644)
 		log.Fatal(errors.New("config file not found, a template file has been created"))
 	}
-	if err:= func() error {
+	if err := func() error {
 		data, err := yaml.Marshal(config)
 		if err != nil {
 			return err
 		}
 		os.WriteFile("config.yaml", []byte(data), 0644)
 		log.Println("config file saved to config.yaml")
-	}(); err!=nil {
+		return nil
+	}(); err != nil {
 		log.Fatal(errors.New("config file save failed"))
 	}
-	return nil
 }
