@@ -84,10 +84,12 @@ func Create[T any](db *gorm.DB, process func(*gorm.DB, *T) *gorm.DB) func(c *gin
 				if process(db, d).Error != nil {
 					c.AbortWithStatus(404)
 					log.Println("[gorm] create data process failed: ", err)
+					return
 				}
 			} else if err := db.Create(d).Error; err != nil {
 				c.AbortWithStatus(404)
 				log.Println("[gorm] create data failed: ", err)
+				return
 			}
 			c.JSON(200, d)
 		}
@@ -100,10 +102,12 @@ func Get[T any](db *gorm.DB, process func(*gorm.DB, *gin.Context) *gorm.DB) func
 			if process(db, c).First(d).Error != nil {
 				c.AbortWithStatus(404)
 				log.Println("[gorm] db query process failed")
+				return
 			}
 		} else if err := db.Where("id = ?", id).First(d).Error; err != nil {
 			c.AbortWithStatus(404)
 			log.Println(err)
+			return
 		}
 		c.JSON(200, d)
 	}
@@ -115,10 +119,12 @@ func GetAll[T any](db *gorm.DB, process func(*gorm.DB, *gin.Context) *gorm.DB) f
 			if process(db, c).Find(d).Error != nil {
 				c.AbortWithStatus(404)
 				log.Println("[gorm] db query all process failed")
+				return
 			}
 		} else if err := db.Find(d).Error; err != nil {
 			c.AbortWithStatus(404)
 			log.Println(err)
+			return
 		}
 		c.JSON(200, d)
 	}
@@ -219,33 +225,53 @@ func HandleLogin(db *gorm.DB) func(*gin.Context) {
 	}
 }
 func HandleRegister(db *gorm.DB) func(*gin.Context) {
-	return func(c *gin.Context) {
-		user := new(User)
+	return Create(db, func(db *gorm.DB, user *User) *gorm.DB {
 		var count int64
-		if err := c.ShouldBindJSON(user); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-			return
-		}
 		if err := db.Where("username = ?", user.Username).Find(new(User)).Count(&count).Error; count != 0 {
 			log.Println("Username already exists: ", err)
-			c.JSON(http.StatusBadRequest, gin.H{"error": "username already exists"})
-			return
+			return db
 		}
 		user.Password = HashedPassword(user.Password)
 		if err := db.Create(user).Error; err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create user"})
-			return
+			log.Println("Failed to create user: ", err)
+			return db
 		}
-		// TODO: fix bug of user & related account info creation
 		if user.ID == 1 { // if it is the first user, set it as admin
 			user.Permission = 0
 			if err := db.Save(user).Error; err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update user"})
-				return
+				log.Println("Failed to update user: ", err)
+				return db
 			}
 		}
-		c.JSON(http.StatusOK, gin.H{"message": "user created successfully"})
-	}
+		return db
+	})
+	// return func(c *gin.Context) {
+	// 	user := new(User)
+	// 	var count int64
+	// 	if err := c.ShouldBindJSON(user); err != nil {
+	// 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	// 		return
+	// 	}
+	// 	if err := db.Where("username = ?", user.Username).Find(new(User)).Count(&count).Error; count != 0 {
+	// 		log.Println("Username already exists: ", err)
+	// 		c.JSON(http.StatusBadRequest, gin.H{"error": "username already exists"})
+	// 		return
+	// 	}
+	// 	user.Password = HashedPassword(user.Password)
+	// 	if err := db.Create(user).Error; err != nil {
+	// 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create user"})
+	// 		return
+	// 	}
+	// 	// TODO: fix bug of user & related account info creation
+	// 	if user.ID == 1 { // if it is the first user, set it as admin
+	// 		user.Permission = 0
+	// 		if err := db.Save(user).Error; err != nil {
+	// 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update user"})
+	// 			return
+	// 		}
+	// 	}
+	// 	c.JSON(http.StatusOK, gin.H{"message": "user created successfully"})
+	// }
 }
 
 func RefreshToken(db *gorm.DB) func(*gin.Context) {
